@@ -10,6 +10,12 @@ root_folder = '/mnt/data/hong/2022/DHJ1_human_obesity_placenta/data/gwas/egg-con
 logging.basicConfig(filename=f'{root_folder}/mk_db.log', level=logging.DEBUG)
 target_folder = '/mnt/storage/hong/2024/egg-consortium'
 
+p = ['p', 'p-value', 'pval', 'p.value', 'p_value']
+n=['n', 'nsamples', 'totalsamplesize']
+rsid=['hm_rsid', 'rs_id','rsid','snp', 'markername', 'variant_id']
+chromosome=['chromosome', 'chrom', 'chromosome_name', 'chr']
+position=['position', 'pos', 'bp', 'basepair', 'base_pair_location', 'base_pair_location_start']
+
 
 def unzip_file(file_path, target_folder):
     """unzip the gz file and move the gz file to a target folder"""
@@ -19,21 +25,18 @@ def unzip_file(file_path, target_folder):
         ## move the zip file to a target folder
         shutil.move(file_path, os.path.join(target_folder, file_path.split("/")[-1]))
 
-def mk_pval_file(file_path, n=42212):
+def mk_pval_file(df, p, n, rsid, filename):
     """
     return a file with fields rs_id, p, and n.
     """
-    ## read the file, delimiter is tab
-    df = pd.read_csv(file_path, sep='\t')
-    ## get the column names
     col_names = df.columns.tolist()
-    rsid_cols = [col for col in col_names if col.lower() in ['hm_rsid', 'rs_id','rsid','snp', 'markername', 'variant_id']]
-    p_cols = [col for col in col_names if col.lower() in ['p', 'p-value', 'pval', 'p.value', 'p_value']]
-    n_cols = [col for col in col_names if col.lower() in ['n', 'nsamples', 'totalsamplesize']]
+    rsid_cols = [col for col in col_names if col.lower().strip() in rsid]
+    p_cols = [col for col in col_names if col.lower().strip() in p]
+    n_cols = [col for col in col_names if col.lower().strip() in n]
     ## check if the rsid_cols, p_cols, and n_cols are unique
     if len(rsid_cols) != 1 or len(p_cols) != 1:
         ## not raise error, but print a warning and continue
-        logging.warning(f"Warning: There should be only one rsid_col, p_col, and n_col in {file_path}")
+        logging.warning(f"Warning: There should be only one rsid_col, p_col, and n_col")
         ## -[] what if not unique?
         return
     ## get the column names
@@ -51,27 +54,25 @@ def mk_pval_file(file_path, n=42212):
     ## specify the column types using pandas for dataframe but not per column
     df2use = df2use.astype({'rsid': 'str', 'p': 'float', 'n': 'int'})
     ## write the file
-    filename = f'{file_path.split("/")[-1]}_p.txt'
-    df2use.to_csv(filename, index=False, sep='\t')
+    filename_new = f'{filename}_p.txt'
+    df2use.to_csv(filename_new, index=False, sep='\t')
 
 ## for os walk 
 # -[] maybe modulize to handle the breaks of the chain of programs
 
-def mk_loc_file(file_path):
+def mk_loc_file(df, rsid,  chromosome, position, filename):
     """
     return a file with fields rs_id, chromosome,position.
     """
-        ## read the file, delimiter is tab
-    df = pd.read_csv(file_path, sep='\t')
     ## get the column names
     col_names = df.columns.tolist()
-    rsid_cols = [col for col in col_names if col.lower() in ['rs_id','rsid','snp', 'markername', 'variant_id']]
-    chromosome_cols = [col for col in col_names if col.lower() in ['chromosome', 'chrom', 'chromosome_name', 'chr']]
+    rsid_cols = [col for col in col_names if col.lower().strip() in rsid]
+    chromosome_cols = [col for col in col_names if col.lower().strip() in chromosome]
     ## using any(substring in string for substring in substring_list)
-    position_cols = [col for col in col_names if any(substring in col.lower() for substring in ['position', 'pos', 'bp', 'basepair', 'base_pair_location', 'base_pair_location_start'])]
+    position_cols = [col for col in col_names if col.lower().strip() in position]
     if len(rsid_cols) != 1 or len(chromosome_cols) != 1 or len(position_cols) != 1:
         ## not raise error, but print a warning and continue
-        logging.warning(f"Warning: There should be only one rsid_col, chromosome_col, and position_col in {file_path}")
+        logging.warning(f"Warning: we found {len(rsid_cols)} rsid_col, {len(chromosome_cols)} chromosome_col, and {len(position_cols)} position_col")
         ## -[] what if not unique?
         return
     ## get the column names
@@ -86,13 +87,16 @@ def mk_loc_file(file_path):
     ## remove any nan row
     df2use = df2use[~df2use.isna().any(axis=1)]
     df2use = df2use.astype({'rsid': 'str', 'chromosome': 'int', 'position': 'int'})
-    filename = f'{file_path.split("/")[-1]}_loc.txt'
-    df2use.to_csv(filename, index=False, sep='\t')
+    filename_new = f'{filename}_loc.txt'
+    df2use.to_csv(filename_new, index=False, sep='\t')
 
-def run_single_gwas(root, file, target_folder, n=42212):
+def run_single_gwas(root, file, target_folder, p, n, rsid, chromosome, position):
     unzip_file(os.path.join(root, file), target_folder)
-    mk_pval_file(os.path.join(root, file.replace('.gz', '')), n)
-    mk_loc_file(os.path.join(root, file.replace('.gz', '')))
+    file_path = os.path.join(root, file.replace('.gz', ''))
+    df = pd.read_csv(file_path, sep='\t')
+    filename = file_path.split("/")[-1]
+    mk_pval_file(df, p, n, rsid, filename)
+    mk_loc_file(df, rsid,  chromosome, position, filename)
     ## remove the unzipped file
     os.remove(os.path.join(root, file.replace('.gz', '')))
 
@@ -102,6 +106,5 @@ if __name__ == "__main__":
             if file.endswith('.gz'):
                 ## logging
                 logging.info(f"Processing {os.path.join(root, file)}")
-                run_single_gwas(root, file)
-
-
+                ## these are defaults
+                run_single_gwas(root, file, target_folder, p = p, n=n, rsid=rsid, chromosome=chromosome, position=position)
